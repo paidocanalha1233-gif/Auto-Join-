@@ -1,0 +1,77 @@
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1414395251606421585/g6EzMdW4iKfiS5K7CXmy__3RJcSNqaIjLhcXh0bKYikawZaAYna5C9LyclgQYk0hVAZi"
+local REFRESH_SECONDS = 5
+--------------------------------------------------------
+
+-- Dependências
+local hs  = game:GetService("HttpService")
+local ts  = game:GetService("TeleportService")
+local lp  = game:GetPlayers().LocalPlayer
+local req = syn and syn.request or (http and http.request) or nil
+if not req then return end
+
+--------------------------------------------------------
+-- 2) FUNÇÕES HTTP
+--------------------------------------------------------
+local LAST_ID
+local function fetch()
+    local ok, body = pcall(function()
+        local res = req({Url = WEBHOOK_URL.."?limit=10", Method = "GET"})
+        return hs:JSONDecode(res.Body)
+    end)
+    return ok and body or {}
+end
+
+local function latest()
+    local msgs = fetch()
+    if type(msgs) ~= "table" or #msgs == 0 then return nil end
+    local top = msgs[1]
+    if top.id == LAST_ID then return nil end
+    LAST_ID = top.id
+    return top.content
+end
+
+--------------------------------------------------------
+-- 3) PARSE DO JSON QUE SUA WEBHOOK ENVIA
+--    Formato esperado:
+--    {"placeId":123456789,"jobId":"GUID_AQUI","brainrot":true}
+--------------------------------------------------------
+local function parse(raw)
+    local ok, data = pcall(hs.JSONDecode, raw)
+    if ok and data.brainrot and data.placeId and data.jobId then
+        return data.placeId, data.jobId
+    end
+    return nil, nil
+end
+
+--------------------------------------------------------
+-- 4) LOOP DE AUTO-JOIN
+--------------------------------------------------------
+spawn(function()
+    while true do
+        local payload = latest()
+        if payload then
+            local placeId, jobId = parse(payload)
+            if placeId and jobId then
+                ts:TeleportToPlaceInstance(placeId, jobId, lp)
+                break -- sai do loop após teleportar
+            end
+        end
+        wait(REFRESH_SECONDS)
+    end
+end)
+
+--------------------------------------------------------
+-- 5) (Opcional) Notificar webhook que você chegou
+--------------------------------------------------------
+local function arrived()
+    req({
+        Url = WEBHOOK_URL,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = hs:JSONEncode({
+            username = "RobloxClient",
+            content  = "✅ Cheguei no servidor com brainrot!"
+        })
+    })
+end
+lp.CharacterAdded:Connect(arrived)
